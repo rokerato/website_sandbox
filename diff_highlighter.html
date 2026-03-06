@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Difference Highlighter</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --panel: #f7f7f8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --add-bg: #dcfce7;
+      --add-fg: #166534;
+      --del-bg: #fee2e2;
+      --del-fg: #991b1b;
+      --same-bg: transparent;
+      --same-fg: inherit;
+      --border: #d1d5db;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111827;
+        --panel: #1f2937;
+        --ink: #f9fafb;
+        --muted: #9ca3af;
+        --add-bg: #14532d;
+        --add-fg: #bbf7d0;
+        --del-bg: #7f1d1d;
+        --del-fg: #fecaca;
+        --border: #374151;
+      }
+    }
+
+    body {
+      margin: 0;
+      padding: 2rem;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.6rem;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .inputs {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+      font: inherit;
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    button {
+      justify-self: start;
+      border: none;
+      border-radius: 10px;
+      padding: 0.6rem 1rem;
+      background: #2563eb;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { opacity: 0.92; }
+
+    .result {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      min-height: 120px;
+      background: var(--panel);
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+
+    .same { background: var(--same-bg); color: var(--same-fg); }
+    .added { background: var(--add-bg); color: var(--add-fg); }
+    .removed {
+      background: var(--del-bg);
+      color: var(--del-fg);
+      text-decoration: line-through;
+    }
+
+    .legend {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .swatch {
+      display: inline-block;
+      padding: 0.1rem 0.35rem;
+      border-radius: 5px;
+      margin-right: 0.2rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Text Difference Highlighter</h1>
+    <p class="hint">Compares two texts by words and highlights removed and added parts.</p>
+
+    <section class="inputs">
+      <label>
+        Original text
+        <textarea id="oldText">The quick brown fox jumps over the lazy dog.</textarea>
+      </label>
+      <label>
+        Updated text
+        <textarea id="newText">The quick red fox jumps over a very lazy dog.</textarea>
+      </label>
+    </section>
+
+    <button id="compareBtn" type="button">Compare Texts</button>
+
+    <div class="legend">
+      <span><span class="swatch removed">Removed</span> from original</span>
+      <span><span class="swatch added">Added</span> in updated</span>
+    </div>
+
+    <section id="result" class="result" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const oldTextEl = document.getElementById('oldText');
+    const newTextEl = document.getElementById('newText');
+    const resultEl = document.getElementById('result');
+    const compareBtn = document.getElementById('compareBtn');
+
+    const tokenize = (text) => text.match(/\S+|\s+/g) || [];
+
+    function computeDiff(oldText, newText) {
+      const a = tokenize(oldText);
+      const b = tokenize(newText);
+      const rows = a.length + 1;
+      const cols = b.length + 1;
+
+      const lcs = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+      for (let i = 1; i < rows; i++) {
+        for (let j = 1; j < cols; j++) {
+          if (a[i - 1] === b[j - 1]) {
+            lcs[i][j] = lcs[i - 1][j - 1] + 1;
+          } else {
+            lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+          }
+        }
+      }
+
+      const chunks = [];
+      let i = a.length;
+      let j = b.length;
+
+      while (i > 0 && j > 0) {
+        if (a[i - 1] === b[j - 1]) {
+          chunks.push({ type: 'same', value: a[i - 1] });
+          i--;
+          j--;
+        } else if (lcs[i - 1][j] >= lcs[i][j - 1]) {
+          chunks.push({ type: 'removed', value: a[i - 1] });
+          i--;
+        } else {
+          chunks.push({ type: 'added', value: b[j - 1] });
+          j--;
+        }
+      }
+
+      while (i > 0) {
+        chunks.push({ type: 'removed', value: a[i - 1] });
+        i--;
+      }
+
+      while (j > 0) {
+        chunks.push({ type: 'added', value: b[j - 1] });
+        j--;
+      }
+
+      return chunks.reverse();
+    }
+
+    function renderDiff(chunks) {
+      resultEl.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+
+      chunks.forEach((chunk) => {
+        const span = document.createElement('span');
+        span.className = chunk.type;
+        span.textContent = chunk.value;
+        fragment.appendChild(span);
+      });
+
+      resultEl.appendChild(fragment);
+    }
+
+    function compareNow() {
+      const chunks = computeDiff(oldTextEl.value, newTextEl.value);
+      renderDiff(chunks);
+    }
+
+    compareBtn.addEventListener('click', compareNow);
+    compareNow();
+  </script>
+</body>
+</html>
